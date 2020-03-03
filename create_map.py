@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 # Volker Fröhlich, 2013
 # volker27@gmx.at
@@ -16,26 +16,38 @@ This script is meant as an example only!
 # Curly brace edge notation requires a patched networkx module
 # https://github.com/networkx/networkx/issues/923
 
+import logging
 import networkx as nx
 import optparse
 import sys
-from pyzabbix import ZabbixAPI
+from pyzabbix import ZabbixAPI, ZabbixAPIException
+import matplotlib.pyplot as plt
+
 parser = optparse.OptionParser()
 parser.add_option('-u', '--username', help="Username", default="admin")
 parser.add_option('-p', '--password', help="Password", default="zabbix")
 parser.add_option('-s', '--host', help="Host To talk to the web api", default="localhost")
 parser.add_option('-d', '--path', help="Path", default="/zabbix/")
 parser.add_option('-f', '--mapfile', help=".dot graphviz file for imput", default="data.dot")
+parser.add_option('-g', '--graphview', help="show graph on screen y/[n]", action="count", default=0)
 parser.add_option('-n', '--mapname', help="Map name to put into zabbix")
 parser.add_option('-r', '--protocol', help="Protocol to be used", default="http")
+parser.add_option('-v', '--verbosity', help="control logging", action="count", default=0)
 (options,args)=parser.parse_args()
 
 if not options.mapname:
-	print "Must have a map name!"
+	print("Must have a map name!")
 	parser.print_help()
 	sys.exit(-1)
 
-width = 1920 
+if options.verbosity > 0:
+    stream = logging.StreamHandler(sys.stdout)
+    stream.setLevel(logging.DEBUG)
+    log = logging.getLogger('pyzabbix')
+    log.addHandler(stream)
+    log.setLevel(logging.DEBUG)
+
+width = 1920
 height = 1280
 
 ELEMENT_TYPE_HOST = 0
@@ -68,24 +80,36 @@ colors = {
 }
 
 def icons_get():
-	icons = {}
-	iconsData = zapi.image.get(output=["imageid","name"])
-	for icon in iconsData:
-		icons[icon["name"]] = icon["imageid"]
-	return icons
+    icons = {}
+    iconsData = zapi.image.get(output=["imageid","name"])
+
+    for icon in iconsData:
+        icons[icon["name"]] = icon["imageid"]
+    # print("icons {}".format(icons))
+
+    return icons
 
 def api_connect():
     zapi = ZabbixAPI(options.protocol + "://" + options.host + options.path)
     zapi.login(options.username, options.password)
+
     return zapi
 
 def host_lookup(hostname):
     hostid = zapi.host.get(filter={"host": hostname})
+
+    # print("hostname {} id {}".format(hostname, hostid))
+
     if hostid:
         return str(hostid[0]['hostid'])
 
+    return None
+
 def map_lookup(mapname):
     mapid = zapi.map.get(filter={"name": mapname})
+
+    # print("mapid {} id {}".format(mapname, mapid))
+
     if mapid:
         return str(mapid[0]['sysmapid'])
 
@@ -102,15 +126,20 @@ pos = nx.drawing.nx_agraph.graphviz_layout(G)
 # The origin is different between Zabbix (top left) and Graphviz (bottom left)
 # Join the temporary selementid necessary for links and the coordinates to the node data
 poslist=list(pos.values())
-maxpos=map(max, zip(*poslist))
-    
-for host, coordinates in pos.iteritems():
-   pos[host] = [int(coordinates[0]*width/maxpos[0]*0.65-coordinates[0]*0.1), int((height-coordinates[1]*height/maxpos[1])*0.65+coordinates[1]*0.1)]
-nx.set_node_attributes(G,'coordinates',pos)
+maxpos=list(map(max, zip(*poslist)))
 
-selementids = dict(enumerate(G.nodes_iter(), start=1))
-selementids = dict((v,k) for k,v in selementids.iteritems())
-nx.set_node_attributes(G,'selementid',selementids)
+# print(pos.items())
+
+for host, coordinates in pos.items():
+   pos[host] = [int(coordinates[0]*width/maxpos[0]*0.65-coordinates[0]*0.1), int((height-coordinates[1]*height/maxpos[1])*0.65+coordinates[1]*0.1)]
+# print(pos.items())
+nx.set_node_attributes(G,name='coordinates',values=pos)
+
+selementids = dict(enumerate(G.nodes(), start=1))
+selementids = dict((v,k) for k,v in selementids.items())
+nx.set_node_attributes(G,name='selementid',values=selementids)
+# nx.draw(G, cmap = plt.get_cmap('jet'), node_color = values)
+
 
 # Prepare map information
 map_params = {
@@ -128,7 +157,9 @@ icons = icons_get()
 
 
 # Prepare node information
-for node, data in G.nodes_iter(data=True):
+
+for node, data in G.nodes(data=True):
+    # print("node {} data {}".format(node,data))
     # Generic part
     map_element = {}
     map_element.update({
@@ -141,7 +172,8 @@ for node, data in G.nodes_iter(data=True):
     if "hostname" in data:
         map_element.update({
                 "elementtype": ELEMENT_TYPE_HOST,
-                "elementid": host_lookup(data['hostname'].strip('"')),
+                "elements": [{"hostid":
+                    host_lookup(data['hostname'].strip('"'))}],
                 "iconid_off": icons['Rackmountable_2U_server_3D_(128)'],
                 })
     elif "map" in data:
@@ -150,7 +182,7 @@ for node, data in G.nodes_iter(data=True):
 		"elementid": map_lookup(data['map'].strip('"')),
                 "iconid_off": icons['Cloud_(96)'],
                 })
-		
+
     else:
         map_element.update({
             "elementtype": ELEMENT_TYPE_IMAGE,
@@ -159,10 +191,12 @@ for node, data in G.nodes_iter(data=True):
     # Labels are only set for images
     # elementid is necessary, due to ZBX-6844
     # If no image is set, a default image is used
+
     if "label" in data:
         map_element.update({
             "label": data['label'].strip('"')
         })
+
     if "zbximage" in data:
         map_element.update({
             "iconid_off": icons[data['zbximage'].strip('"')],
@@ -171,13 +205,15 @@ for node, data in G.nodes_iter(data=True):
         map_element.update({
             "iconid_off": icons['Cloud_(96)'],
         })
+    # print(map_element)
 
     element_params.append(map_element)
 
 # Prepare edge information -- Iterate through edges to create the Zabbix links,
 # based on selementids
 nodenum = nx.get_node_attributes(G,'selementid')
-for nodea, nodeb, data in G.edges_iter(data=True):
+
+for nodea, nodeb, data in G.edges(data=True):
     link = {}
     link.update({
         "selementid1": nodenum[nodea],
@@ -203,11 +239,15 @@ for nodea, nodeb, data in G.edges_iter(data=True):
     link_params.append(link)
 
 # Join the prepared information
+# print("map_params {}".format(map_params))
 map_params["selements"] = element_params
+# print("map_params {}".format(map_params))
 map_params["links"] = link_params
-    
+# print("map_params {}".format(map_params))
+
 # Get rid of an existing map of that name and create a new one
 del_mapid = zapi.map.get(filter={"name": options.mapname})
+
 if del_mapid:
 	zapi.map.update({"sysmapid":del_mapid[0]['sysmapid'], "links":[], "selements":[], "urls":[] })
 	map_params["sysmapid"] = del_mapid[0]['sysmapid']
@@ -218,4 +258,12 @@ if del_mapid:
 	#del map_params["height"]
 	map=zapi.map.update(map_params)
 else:
-	map = zapi.map.create(map_params)
+    # print("create map {}".format(map_params))
+    try:
+        map = zapi.map.create(map_params)
+    except ZabbixAPIException as e:
+        print("exception {}".format(e))
+
+if options.graphview:
+    nx.draw(G, cmap = plt.get_cmap('jet'))
+    plt.show()   # draw on screen
