@@ -8,11 +8,11 @@ graph G {
 	node [shape=box fixedsize=true width=1 height=1]
 
 	//We don't want to type the long hostname when defining edges
-	server1 [hostname="server1.name", zbximage="Rackmountable_1U_server_3D_(128)"]
-	databaseserver1 [hostname="databaseserver1.name", zbximage="Rackmountable_1U_server_3D_(128)"]
+	server1 [hostname="server1", zbximage="Rackmountable_1U_server_3D_(128)"]
+	databaseserver1 [hostname="databaseserver1", zbximage="Rackmountable_1U_server_3D_(128)"]
 
 
-	server2 [hostname="server2.name", zbximage="Rackmountable_1U_server_3D_(128)"]
+	server2 [hostname="server2", zbximage="Rackmountable_1U_server_3D_(128)"]
 
 	loadbalancer [hostname="virtualip" zbximage="Rackmountable_1U_server_3D_(128)"]
 
