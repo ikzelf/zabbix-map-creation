@@ -103,6 +103,8 @@ def host_lookup(hostname):
     if hostid:
         return str(hostid[0]['hostid'])
 
+    print("Missing hostid for hostname {}".format(hostname), file=sys.stderr)
+
     return None
 
 def map_lookup(mapname):
@@ -138,8 +140,6 @@ nx.set_node_attributes(G,name='coordinates',values=pos)
 selementids = dict(enumerate(G.nodes(), start=1))
 selementids = dict((v,k) for k,v in selementids.items())
 nx.set_node_attributes(G,name='selementid',values=selementids)
-# nx.draw(G, cmap = plt.get_cmap('jet'), node_color = values)
-
 
 # Prepare map information
 map_params = {
